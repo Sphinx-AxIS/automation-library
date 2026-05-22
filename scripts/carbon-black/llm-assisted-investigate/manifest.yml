@@ -109,10 +109,11 @@ tags:
 related:
   - export-processes-by-host  # complementary CB extraction workflow without LLM step
 notes: >
-  WIP. The Carbon Black server URL and credential file paths are hardcoded
-  inside Get-CBProcessTree.ps1 and SoftwareValidation.ps1, and process_map.csv
-  is referenced at runtime but is not committed. Before this script is usable
-  outside its original environment those paths need to be parameterized and a
-  sample process_map.csv (or a generator) needs to ship with the folder. There
-  is no per-folder README yet — the SYNOPSIS/DESCRIPTION blocks at the top of
-  Start-CBInvestigation.ps1 are currently the only documentation.
+  Hardcoded server URLs, credential paths, the per-process event output
+  directory, and the internal CIDR ranges inside the LLM prompt template
+  have all been replaced with editable placeholders that must be filled
+  in before running. See README.md in this folder for the full
+  configuration checklist. Remaining outstanding item: process_map.csv
+  is required at runtime but is not committed; a generator or sample
+  needs to be added before this is turnkey outside its original
+  environment.

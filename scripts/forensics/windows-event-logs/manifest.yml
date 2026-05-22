@@ -6,16 +6,18 @@
 # --- Identity --------------------------------------------------------------
 
 # Short identifier — must match the script folder name (kebab-case).
-name: convert-epoch-time
+name: windows-event-logs
 
 # Human-readable title for catalog display.
-display_name: Convert Epoch Time to UTC
+display_name: Export Windows Event Logs by Start Time
 
 # One- to three-sentence description. Pulled into CATALOG.md.
 summary: >
-  Reads epoch-millisecond timestamps from a text file and writes a CSV
-  mapping each value to its UTC ISO-8601 representation. Useful for quickly
-  normalizing log timestamps during forensic review.
+  Bulk-exports every populated Windows event log to a per-log .evtx file
+  filtered to events created at or after a specified UTC start time, then
+  compresses the result into a single ZIP. Designed for fast forensic
+  capture of recent activity across the full local event-log landscape
+  without grabbing unfiltered full logs.
 
 # --- Classification --------------------------------------------------------
 
@@ -33,7 +35,7 @@ status: Beta
 
 # The script you invoke directly. For dot-sourced function files, name the
 # file even though it is not "run" in the conventional sense.
-entry_point: ConvertEpoch-toHuman.ps1
+entry_point: Get-targetedEvents.ps1
 
 # Optional — list supporting scripts and what each one does. Omit for
 # single-file scripts.
@@ -49,21 +51,28 @@ entry_point: ConvertEpoch-toHuman.ps1
 # --- Runtime profile -------------------------------------------------------
 
 requirements:
-  os: Cross-platform
+  os: Windows
   powershell: ">=5.1"
+  software:
+    - wevtutil.exe          # built into Windows
+    - Compress-Archive      # built-in PowerShell cmdlet
   permissions:
-    - Read access to the input file
-    - Write access to the output directory
+    - Administrator rights are required to read most Windows event logs (Security log especially)
+    - Write access to the chosen output directory and ZIP destination
 
 # --- Data flow -------------------------------------------------------------
 
 # Inputs the script consumes (parameters, files, API responses).
 inputs:
-  - epochs.txt  # one epoch-millisecond integer per line; loaded from the current working directory
+  - -StartUtc     # ISO-8601 UTC timestamp; events at or after this time are exported (e.g. '2026-05-03T00:00:00.000Z')
+  - -OutputRoot   # directory to write per-log .evtx files (created if missing)
+  - -ZipPath      # path for the final ZIP archive (overwritten if it exists)
 
 # Outputs the script produces (files, console output, return objects).
 outputs:
-  - converted.csv  # two columns: EpochMS, UTC (ISO-8601 with offset); written to the current working directory
+  - One filtered .evtx file per populated event log in -OutputRoot (log-name characters that are illegal in filenames are replaced with underscores)
+  - ZIP archive of all exported .evtx files at -ZipPath
+  - Console line confirming the ZIP path
 
 # --- Cross-reference -------------------------------------------------------
 
@@ -71,8 +80,11 @@ outputs:
 # existing tags where they fit; add new ones sparingly.
 tags:
   - forensics
-  - time
-  - snippet
+  - windows
+  - event-logs
+  - evtx
+  - wevtutil
+  - evidence-capture
   - powershell
 
 # --- Optional metadata -----------------------------------------------------
@@ -81,12 +93,11 @@ tags:
 # created: <YYYY-MM-DD>
 # updated: <YYYY-MM-DD>
 # related:
-#   - <other-script-name>     # e.g. companion or downstream tool
+#   - <other-script-name>
 notes: >
-  Now parameterized with mandatory -InputPath and -OutputPath. No input
-  validation: blank or non-numeric lines in the input file throw an
-  exception that halts the run. Pre-clean the input file or wrap the
-  inner expression in try/catch if noisy data is expected. Epoch values
-  are interpreted as milliseconds, not seconds — multiply by 1000 first
-  if your timestamps are seconds-based, or switch the call site to
-  [DateTimeOffset]::FromUnixTimeSeconds.
+  Reads from the local machine only — there is no remote-target parameter.
+  Empty event logs are skipped to keep the output set small. wevtutil
+  stderr is silenced (2>$null) so locked or access-denied logs do not
+  pollute the console; if you need a complete capture log, remove that
+  suppression. Administrator rights are required to read the Security
+  log and other restricted channels.

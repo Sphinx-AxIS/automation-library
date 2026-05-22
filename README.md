@@ -1,6 +1,6 @@
 # automation-library
 
-A collection of PowerShell automation scripts for security operations, endpoint triage, and forensic investigation. Each script is self-contained under a category folder with its own README and manifest, so a script can be lifted out and run independently of the rest of the library.
+A collection of automation scripts (primarily PowerShell, with Python where it fits the use case better) for security operations, endpoint triage, and forensic investigation. Each script is self-contained under a category folder with its own README and manifest, so a script can be lifted out and run independently of the rest of the library.
 
 ## Repository layout
 
@@ -24,7 +24,7 @@ automation-library/
 
 | Folder | Purpose |
 |---|---|
-| [scripts/carbon-black/](scripts/carbon-black/) | EDR data extraction, process tree analysis, JSON → CSV → XLSX conversion |
+| [scripts/carbon-black/](scripts/carbon-black/) | EDR data extraction, process tree analysis and visualization, JSON → CSV → XLSX conversion |
 | [scripts/elastic/](scripts/elastic/) | Elastic Stack queries, detection rules, enumeration tooling |
 | [scripts/file-system/](scripts/file-system/) | File metadata collection, keyword searching, content inspection |
 | [scripts/forensics/](scripts/forensics/) | Timestamp conversion, alternate data stream hunting, artifact parsing |
@@ -59,9 +59,9 @@ If no existing category fits, create a new top-level folder under `scripts/` and
 
 ## Requirements
 
-- Windows
-- PowerShell 5.1+ or PowerShell 7+ (per-script READMEs note when one is required)
-- Individual scripts may require additional access or software — API keys, network reach, Microsoft Office for COM-based parsers, etc. See each script's README.
+- Most scripts target Windows; a few are cross-platform (see each script's README and the [Platform requirements](CAPABILITY_MATRIX.md#platform-requirements) table)
+- PowerShell 5.1+ or PowerShell 7+ for the PowerShell scripts; Python 3.8+ for the Python scripts (currently `scripts/carbon-black/graph-process-tree/`)
+- Individual scripts may require additional access or software — API keys, network reach, Microsoft Office for COM-based parsers, Graphviz binaries, etc. See each script's README.
 
 ## Status conventions
 

@@ -2,6 +2,7 @@ automation-library/
   README.md
   CATALOG.md
   CAPABILITY_MATRIX.md
+  manifest.txt
 
   scripts/
     carbon-black/
@@ -11,20 +12,37 @@ automation-library/
         Run-FullCBWorkflow.ps1
         ConvertJSON-ToCSV.ps1
         Convert-ToXlsx.ps1
-
-    elastic/
-      ad-enumeration-detection/
+      graph-process-tree/
         README.md
         manifest.yml
-        Detect-ADEumeration.ps1
+        process_pid_context_svg_styled.py
+        process_pid_context_diagram.py
+        process_trees_svg_indented.py
+      llm-assisted-investigate/
+        README.md
+        manifest.yml
+        Start-CBInvestigation.ps1
+        Get-CBProcessTree.ps1
+        SoftwareValidation.ps1
+        whitelist.txt
+        SWAP_APIKEY.txt
+        SWAP_APIKEY_README.txt
+
+    elastic/
+      query-kibana-api/
+        README.md
+        manifest.yml
+        Kibana_API.ps1
 
     file-system/
       get-file-metadata/
+        README.md
+        manifest.yml
         Get-AllFileMetadata.ps1
-		README.md
       search-file-for-keywords/
+        README.md
+        manifest.yml
         Search-Keywords.ps1
-		README.md
 
     forensics/
       convert-epoch-time/
@@ -32,7 +50,19 @@ automation-library/
         manifest.yml
         ConvertEpoch-toHuman.ps1
       hunt-for-alternate-datastreams/
+        README.md
+        manifest.yml
         Get-AlternateDataStreams.ps1
+      windows-event-logs/
+        README.md
+        manifest.yml
+        Get-targetedEvents.ps1
+
+    llm/
+      get-codex-usage/
+        README.md
+        manifest.yml
+        Get-CODEXUsage.ps1
 
   templates/
     README-template.md

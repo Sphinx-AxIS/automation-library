@@ -23,6 +23,16 @@ End-to-end Carbon Black extraction workflow. Queries the CB API for processes fi
 - **Outputs:** JSON (raw), CSV (structured), XLSX (final)
 - **Status:** Production
 
+### [graph-process-tree](scripts/carbon-black/graph-process-tree/)
+Three Python scripts that visualize Carbon Black process trees from an Excel export. Includes a forest renderer that emits one styled SVG per root tree across the entire workbook, and two PID-centered renderers (a zero-dependency styled SVG and a Graphviz-based DOT/SVG/PDF/PNG variant) that show ancestors up to the root parent plus all descendants of a target PID.
+
+- **Entry point:** [process_pid_context_svg_styled.py](scripts/carbon-black/graph-process-tree/process_pid_context_svg_styled.py)
+- **Components:** `process_trees_svg_indented.py` (forest renderer), `process_pid_context_diagram.py` (Graphviz alternative)
+- **Inputs:** Excel workbook (`.xlsx`) with hostname/parent_name/parent_pid/process_name/cmdline/username/process_pid columns; target PID for the PID-centered scripts
+- **Outputs:** Styled SVG (or DOT/SVG/PDF/PNG via Graphviz), per-diagram CSV, run-level manifest CSV
+- **Language:** Python 3.8+
+- **Status:** Beta
+
 ---
 
 ## elastic
@@ -59,16 +69,26 @@ Searches a single file (`.txt`, `.docx`, etc.) for a user-supplied keyword list 
 ## forensics
 
 ### [convert-epoch-time](scripts/forensics/convert-epoch-time/)
-Reads epoch-millisecond timestamps from `epochs.txt` and writes `converted.csv` mapping each value to its UTC ISO-8601 representation.
+Reads epoch-millisecond timestamps from a text file (one per line) and writes a two-column CSV (`EpochMS`, `UTC`) mapping each value to its UTC ISO-8601 representation.
 
 - **Entry point:** [ConvertEpoch-toHuman.ps1](scripts/forensics/convert-epoch-time/ConvertEpoch-toHuman.ps1)
-- **Status:** WIP (snippet — input/output paths are hardcoded)
+- **Inputs:** `-InputPath`, `-OutputPath`
+- **Status:** Beta
 
 ### [hunt-for-alternate-datastreams](scripts/forensics/hunt-for-alternate-datastreams/)
 Lists and prints the contents of NTFS alternate data streams attached to a single target file, skipping the default `$DATA` stream.
 
 - **Entry point:** [Get-AlternateDataStreams.ps1](scripts/forensics/hunt-for-alternate-datastreams/Get-AlternateDataStreams.ps1)
-- **Status:** WIP (snippet — target path is hardcoded)
+- **Inputs:** `-Path`
+- **Status:** Beta
+
+### [windows-event-logs](scripts/forensics/windows-event-logs/)
+Bulk-exports every populated Windows event log on the local machine to a per-log `.evtx` file filtered to events created at or after a specified UTC start time, then compresses the result into a single ZIP. Useful for fast forensic capture of recent activity across the full event-log landscape.
+
+- **Entry point:** [Get-targetedEvents.ps1](scripts/forensics/windows-event-logs/Get-targetedEvents.ps1)
+- **Inputs:** `-StartUtc`, `-OutputRoot`, `-ZipPath`
+- **Outputs:** One `.evtx` per populated log in `-OutputRoot`; combined ZIP archive at `-ZipPath`
+- **Status:** Beta
 
 ---
 

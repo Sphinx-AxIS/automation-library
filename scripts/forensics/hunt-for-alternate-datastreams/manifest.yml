@@ -27,7 +27,7 @@ language: PowerShell
 # Production = stable, in active use.
 # Beta       = functional but rough edges; review before production use.
 # WIP        = under development; expect breakage.
-status: WIP
+status: Beta
 
 # --- Files in this folder --------------------------------------------------
 
@@ -86,9 +86,10 @@ tags:
 related:
   - get-file-metadata  # fuller metadata collector that also enumerates streams as part of broader output
 notes: >
-  WIP / snippet. The target file path is hardcoded ('D:\Tim\Downloads\...');
-  there are no parameters or input validation. Output is raw stream content
-  printed to the console — text streams will display, but binary streams
-  will produce noise. To productionize: take -Path as a parameter, accept
-  pipeline input, and add a switch for binary-safe (e.g. base64) output.
-  There is no per-folder README yet.
+  Now parameterized with mandatory -Path. Single-file only: no pipeline
+  input or recursion. Wrap in Get-ChildItem ... | ForEach-Object for
+  directory-wide hunting. Output is raw stream content printed to the
+  console — text streams display normally, but binary streams produce
+  noise. For binary inspection, redirect to a file or use a hex viewer
+  downstream. For a fuller metadata view that also lists streams (plus
+  hashes, ACLs, Authenticode, etc.), see get-file-metadata.

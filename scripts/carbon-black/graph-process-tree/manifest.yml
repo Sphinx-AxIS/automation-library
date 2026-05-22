@@ -1,0 +1,116 @@
+# Manifest for a single script folder under scripts/<category>/<script-name>/
+# Copy this file as manifest.yml inside the script folder and fill it in.
+# Required fields are uncommented. Optional fields are commented out — uncomment
+# any that apply.
+
+# --- Identity --------------------------------------------------------------
+
+# Short identifier — must match the script folder name (kebab-case).
+name: graph-process-tree
+
+# Human-readable title for catalog display.
+display_name: Graph Carbon Black Process Trees
+
+# One- to three-sentence description. Pulled into CATALOG.md.
+summary: >
+  Three Python scripts that read a Carbon Black process-event export
+  (Excel) and render the process trees as visual diagrams. Includes a
+  whole-workbook forest renderer (every root tree as styled SVGs) and
+  two PID-centered renderers (ancestors up to the root parent plus all
+  descendants of a target PID, in either zero-dependency styled SVG
+  form or Graphviz DOT/SVG/PDF/PNG form).
+
+# --- Classification --------------------------------------------------------
+
+# Top-level folder under scripts/.
+category: carbon-black
+
+language: Python
+
+# Production = stable, in active use.
+# Beta       = functional but rough edges; review before production use.
+# WIP        = under development; expect breakage.
+status: Beta
+
+# --- Files in this folder --------------------------------------------------
+
+# The script you invoke directly. For dot-sourced function files, name the
+# file even though it is not "run" in the conventional sense.
+entry_point: process_pid_context_svg_styled.py
+
+# Optional — list supporting scripts and what each one does. Omit for
+# single-file scripts.
+components:
+  - name: process_trees_svg_indented.py
+    description: Forest renderer. Reads the workbook, builds every root tree, and writes one styled SVG per root under trees/ along with a deduped CSV, a tree manifest CSV, a summary, and a ZIP bundle of the output directory.
+  - name: process_pid_context_diagram.py
+    description: PID-centered Graphviz alternative. Same lineage-up + descendants-down logic as the SVG-styled entry point, but emits Graphviz DOT plus a rendered SVG/PDF/PNG. Falls back to writing only the .dot file if Graphviz binaries aren't on PATH.
+
+# Optional — non-script support files (config, lookup tables, etc.).
+# support_files:
+#   - name: ...
+
+# --- Runtime profile -------------------------------------------------------
+
+requirements:
+  os: Cross-platform
+  python: ">=3.8"
+  packages:
+    - openpyxl   # required by all three scripts
+    - pandas     # required only by process_pid_context_diagram.py
+    - graphviz   # Python wrapper; only by process_pid_context_diagram.py
+  software:
+    - Graphviz system binaries on PATH  # only needed for process_pid_context_diagram.py to produce SVG/PDF/PNG; without them the script still emits .dot
+  permissions:
+    - Read access to the input .xlsx workbook
+    - Write access to the chosen output directory
+
+# --- Data flow -------------------------------------------------------------
+
+# Inputs the script consumes (parameters, files, API responses).
+# All three scripts read an Excel workbook with these required columns on
+# the chosen worksheet: hostname, parent_name, parent_pid, process_name,
+# cmdline, username, process_pid. Rows are deduped on all seven columns.
+inputs:
+  - input_xlsx     # positional — path to the Excel workbook
+  - --pid          # required for the two PID-centered scripts; target process PID
+  - --hostname     # optional hostname filter (PID-centered scripts)
+  - --sheet        # optional worksheet index or name (default: first sheet)
+  - --outdir       # output directory (default differs per script)
+  - --format       # only on process_pid_context_diagram.py; svg | pdf | png
+
+# Outputs the script produces (files, console output, return objects).
+outputs:
+  - process_pid_context_svg_styled.py — one styled SVG plus a per-diagram CSV per matching deduplicated row, plus a manifest.csv summarising the run
+  - process_pid_context_diagram.py — one .dot file (always) plus one rendered SVG/PDF/PNG (if Graphviz is installed) plus a per-diagram CSV per matching row, plus a manifest.csv
+  - process_trees_svg_indented.py — one styled SVG per root tree under trees/, plus tree_manifest.csv, process_nodes_deduped.csv, summary.txt, and process_tree_svgs_bundle.zip
+
+# --- Cross-reference -------------------------------------------------------
+
+# Free-form tags used by CAPABILITY_MATRIX.md. Prefer kebab-case. Reuse
+# existing tags where they fit; add new ones sparingly.
+tags:
+  - carbon-black
+  - edr
+  - process-tree
+  - visualization
+  - svg
+  - graphviz
+  - excel
+  - python
+
+# --- Optional metadata -----------------------------------------------------
+
+# maintainer: <name or GitHub handle>
+# created: <YYYY-MM-DD>
+# updated: <YYYY-MM-DD>
+related:
+  - export-processes-by-host  # produces the .xlsx that feeds these scripts
+notes: >
+  All three scripts share the seven-column input schema and dedupe rows on
+  those exact columns before building the tree. The PID-centered scripts
+  may produce more than one diagram per run if the target PID appears in
+  multiple deduped rows (e.g. the same PID seen on different hosts). Use
+  the SVG-styled renderer for self-contained, dependency-light output;
+  use the Graphviz renderer when you need PDF/PNG or want layout control
+  via DOT.

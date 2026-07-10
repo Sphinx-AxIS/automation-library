@@ -82,7 +82,16 @@ Lists and prints the contents of NTFS alternate data streams attached to a singl
 - **Inputs:** `-Path`
 - **Status:** Beta
 
+### [search-zeekfeeds](scripts/forensics/search-zeekfeeds/)
+
+Queries 24 IP-specific open-source threat intelligence feeds hosted in the CriticalPathSecurity Zeek repository. Bypasses GitHub API rate limits by pulling raw lists directly from the CDN to rapidly audit Indicators of Compromise (IOCs).
+
+- **Entry point:** [Search-ZeekFeeds.psm1](scripts/forensics/search-zeekfeeds/Search-ZeekFeeds.psm1)
+- **Inputs:** `-TargetIP` (supports string array inputs via pipeline)
+- **Status:** Active
+
 ### [windows-event-logs](scripts/forensics/windows-event-logs/)
+
 Bulk-exports every populated Windows event log on the local machine to a per-log `.evtx` file filtered to events created at or after a specified UTC start time, then compresses the result into a single ZIP. Useful for fast forensic capture of recent activity across the full event-log landscape.
 
 - **Entry point:** [Get-targetedEvents.ps1](scripts/forensics/windows-event-logs/Get-targetedEvents.ps1)

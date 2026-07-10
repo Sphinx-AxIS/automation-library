@@ -1,0 +1,87 @@
+# Manifest for a single script folder under scripts/<category>/<script-name>/
+# Copy this file as manifest.yml inside the script folder and fill it in.
+# Required fields are uncommented. Optional fields are commented out — uncomment
+# any that apply.
+
+# --- Identity --------------------------------------------------------------
+# Short identifier — must match the script folder name (kebab-case).
+name: search-zeekfeeds
+
+# Human-readable title for catalog display.
+display_name: Search Zeek Intelligence Feeds
+
+# One- to three-sentence description. Pulled into CATALOG.md.
+summary: >
+  Queries 24 IP-specific open-source threat intelligence feeds hosted in the 
+  CriticalPathSecurity Zeek repository. Bypasses GitHub API rate limits by 
+  pulling raw lists directly from the CDN to rapidly audit Indicators of Compromise (IOCs).
+
+# --- Classification --------------------------------------------------------
+# Top-level folder under scripts/.
+category: forensics
+language: PowerShell
+
+# Production = stable, in active use.
+# Beta       = functional but rough edges; review before production use.
+# WIP        = under development; expect breakage.
+status: Production
+
+# --- Files in this folder --------------------------------------------------
+# The script you invoke directly. For dot-sourced function files, name the
+# file even though it is not "run" in the conventional sense.
+entry_point: Search-ZeekFeeds.psm1
+
+# Optional — list supporting scripts and what each one does. Omit for
+# single-file scripts.
+# components:
+#   - name: <Helper-One.ps1>
+#     description: <What this supporting script does.>
+
+# Optional — non-script support files (config, lookup tables, etc.).
+# support_files:
+#   - name: whitelist.txt
+#     description: One entry per line; lines starting with # are ignored.
+
+# --- Runtime profile -------------------------------------------------------
+requirements:
+  os: Cross-Platform (Windows, Linux, macOS)
+  powershell: ">=5.1"
+  software:
+    - Invoke-RestMethod     # built-in PowerShell cmdlet
+  permissions:
+    - Outbound internet access to raw.githubusercontent.com (HTTPS port 443)
+
+# --- Data flow -------------------------------------------------------------
+# Inputs the script consumes (parameters, files, API responses).
+inputs:
+  - -TargetIP     # The single IPv4 address string to search for (e.g., '148.66.142.9'). Supports pipeline input.
+
+# Outputs the script produces (files, console output, return objects).
+outputs:
+  - PSCustomObject stream containing 'Feed' (the filename where the IP was found) and 'Match' (the exact tab-delimited line from the feed).
+  - Console write-host status line indicating the search target.
+
+# --- Cross-reference -------------------------------------------------------
+# Free-form tags used by CAPABILITY_MATRIX.md. Prefer kebab-case. Reuse
+# existing tags where they fit; add new ones sparingly.
+tags:
+  - forensics
+  - threat-intelligence
+  - ioc-checking
+  - zeek
+  - ip-lookup
+  - osint
+  - powershell
+
+# --- Optional metadata -----------------------------------------------------
+# maintainer: <name or GitHub handle>
+# created: <YYYY-MM-DD>
+# updated: <YYYY-MM-DD>
+# related:
+#   - <other-script-name>
+
+notes: >
+  This script is deployed as a PowerShell Script Module (.psm1). It must be imported 
+  into the session (e.g., Import-Module .\Search-ZeekFeeds.psm1) to expose the 
+  Search-ZeekFeeds function. Network or 404 errors during feed retrieval are 
+  silently caught and ignored to maintain a clean console output during rapid IR triage.

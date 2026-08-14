@@ -54,9 +54,9 @@ inputs:
   - local destination path (analyst machine)
 
 outputs:
-  - memory image file (raw by default via go-winpmem; AFF4 with pagefile via legacy build)
+  - memory image file (snappy-compressed go-winpmem image by default; needs 'go-winpmem extract' to decompress. Raw if --compression dropped; AFF4 with pagefile via legacy build)
   - SHA256 sidecar (.sha256)
-  - acquisition manifest (.manifest.json)
+  - acquisition manifest (.manifest.json, records compression state and the extract command)
 
 # --- Cross-reference -------------------------------------------------------
 

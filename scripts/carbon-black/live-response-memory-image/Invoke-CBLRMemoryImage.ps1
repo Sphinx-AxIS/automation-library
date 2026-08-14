@@ -80,22 +80,31 @@ param(
 
     # Winpmem argument string, exposed for runtime control. The tokens
     # {ImagePath} and {PagefilePath} are substituted with -RemoteImagePath and
-    # -PagefilePath. The default targets go-winpmem (raw RAM image, signed driver).
+    # -PagefilePath. The default targets go-winpmem with snappy compression, which
+    # shrinks the image before it crosses the (slow) Live Response transfer - the
+    # retrieved file must be decompressed with 'go-winpmem extract' (the script
+    # prints the exact command at the end).
+    # For an uncompressed raw image, drop '--compression snappy'.
     # For the legacy AFF4 build that captures the pagefile, pass instead:
     #   -o "{ImagePath}" -p "{PagefilePath}" -dd
     # Provide your own to change binary/format/flags (keep {ImagePath} so retrieval
     # knows where the image landed). See the README binary table.
-    [string]$WinpmemArguments = 'acquire --progress "{ImagePath}"',
+    [string]$WinpmemArguments = 'acquire --compression snappy --progress "{ImagePath}"',
 
     # Where to save the exported image on THIS machine (analyst's DESTINATION).
     # May be a directory (file name is derived) or a full file path.
     [string]$LocalDestinationPath,
 
-    # Retrieval chunk size in MB for chunked 'get file'. Set to 0 to pull the
+    # Retrieval chunk size in MB for chunked 'get file'. Larger chunks mean fewer
+    # round-trips (faster export) but stage more in the CB server file store, which
+    # must be able to hold one chunk (CbLRMaxStoreSizeMB). Set to 0 to pull the
     # whole file in a single request instead.
-    [int]$RetrievalChunkSizeMB = 64,
+    [int]$RetrievalChunkSizeMB = 256,
 
-    # Polling / timeout controls.
+    # Polling / timeout controls. Status polling is adaptive: it starts fast and
+    # backs off up to PollIntervalSeconds (the ceiling), so small fast commands
+    # (e.g. get-file chunks) return in well under a second instead of waiting a
+    # fixed interval each time.
     [int]$PollIntervalSeconds       = 5,
     [int]$SessionTimeoutSeconds     = 300,
     [int]$CommandTimeoutSeconds     = 120,
@@ -209,8 +218,9 @@ function Invoke-LRCommand {
 
     $deadline      = (Get-Date).AddSeconds($TimeoutSeconds)
     $lastKeepAlive = Get-Date
+    $delay         = $script:PollInitialDelay   # adaptive: start fast, back off to the ceiling
     while ($true) {
-        Start-Sleep -Seconds $script:PollInterval
+        Start-Sleep -Milliseconds ([int]($delay * 1000))
         $cmd = Invoke-CbApi -Method GET -Path "/api/v1/cblr/session/$SessionId/command/$cmdId"
 
         if ($cmd.status -eq 'complete') { return $cmd }
@@ -231,6 +241,7 @@ function Invoke-LRCommand {
             Send-KeepAlive -SessionId $SessionId
             $lastKeepAlive = Get-Date
         }
+        $delay = [Math]::Min($delay * 2, $script:PollInterval)   # exponential backoff, capped
     }
 }
 
@@ -288,8 +299,9 @@ if ([string]::IsNullOrWhiteSpace($CbServerUrl)) {
 if ([string]::IsNullOrWhiteSpace($CbServerUrl)) { throw 'A Carbon Black server URL is required.' }
 $script:BaseUrl  = $CbServerUrl.TrimEnd('/')
 $script:SkipCert = [bool]$SkipCertificateCheck
-$script:PollInterval   = $PollIntervalSeconds
-$script:CommandTimeout = $CommandTimeoutSeconds
+$script:PollInterval     = $PollIntervalSeconds   # adaptive-poll ceiling
+$script:PollInitialDelay = 0.25                   # first poll delay (seconds), then backs off
+$script:CommandTimeout   = $CommandTimeoutSeconds
 
 # API key: ALWAYS prompted, never an argument.
 Write-Host "Enter your Carbon Black API token (input hidden)." -ForegroundColor Yellow
@@ -486,19 +498,18 @@ try {
     #  STEP 6: Export the image to this machine (chunked get file)
     # =============================================================================
     Write-Host "`n[6/8] Exporting image to $LocalDestinationPath ..." -ForegroundColor Cyan
-    $chunkBytes = [int64]$RetrievalChunkSizeMB * 1MB
-    $fs = [System.IO.File]::Open($LocalDestinationPath, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write)
-    try {
-        if ($chunkBytes -le 0) {
-            # Single-shot retrieval.
-            $getCmd = Invoke-LRCommand -SessionId $sessionId -Name 'get file' -Object $RemoteImagePath -TimeoutSeconds $AcquisitionTimeoutSeconds
-            $tmp    = [System.IO.Path]::GetTempFileName()
-            Invoke-CbApi -Method GET -Path "/api/v1/cblr/session/$sessionId/file/$($getCmd.file_id)/content" -OutFile $tmp -TimeoutSec $AcquisitionTimeoutSeconds
-            $bytes  = [System.IO.File]::ReadAllBytes($tmp)
-            $fs.Write($bytes, 0, $bytes.Length)
-            Remove-Item -LiteralPath $tmp -Force
-        }
-        else {
+    $chunkBytes    = [int64]$RetrievalChunkSizeMB * 1MB
+    $exportStart   = Get-Date
+    if ($chunkBytes -le 0) {
+        # Single-shot: stream the whole file straight to the destination.
+        $getCmd = Invoke-LRCommand -SessionId $sessionId -Name 'get file' -Object $RemoteImagePath -TimeoutSeconds $AcquisitionTimeoutSeconds
+        Invoke-CbApi -Method GET -Path "/api/v1/cblr/session/$sessionId/file/$($getCmd.file_id)/content" -OutFile $LocalDestinationPath -TimeoutSec $AcquisitionTimeoutSeconds
+    }
+    else {
+        # Chunked: pull offset/get_count ranges and stream each chunk onto the end
+        # of the destination file (no whole-chunk buffering in memory).
+        $fs = [System.IO.File]::Open($LocalDestinationPath, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write)
+        try {
             $offset = [int64]0
             while ($offset -lt $remoteSize) {
                 $count  = [Math]::Min($chunkBytes, $remoteSize - $offset)
@@ -506,22 +517,29 @@ try {
                     -Extra @{ offset = $offset; get_count = $count } -TimeoutSeconds $CommandTimeoutSeconds
                 $tmp = [System.IO.Path]::GetTempFileName()
                 Invoke-CbApi -Method GET -Path "/api/v1/cblr/session/$sessionId/file/$($getCmd.file_id)/content" -OutFile $tmp -TimeoutSec $AcquisitionTimeoutSeconds
-                $bytes = [System.IO.File]::ReadAllBytes($tmp)
+                $chunkLen = (Get-Item -LiteralPath $tmp).Length
+                if ($chunkLen -gt 0) {
+                    $in = [System.IO.File]::OpenRead($tmp)
+                    try { $in.CopyTo($fs) } finally { $in.Dispose() }
+                }
                 Remove-Item -LiteralPath $tmp -Force
-                if ($bytes.Length -eq 0) { break }   # EOF safety
-                $fs.Write($bytes, 0, $bytes.Length)
-                $offset += $bytes.Length
-                $pct = [int](($offset / $remoteSize) * 100)
-                Write-Progress -Activity 'Exporting memory image' -Status ("{0:N0} / {1:N0} bytes ({2}%)" -f $offset, $remoteSize, $pct) -PercentComplete $pct
+                if ($chunkLen -eq 0) { break }   # EOF safety
+                $offset += $chunkLen
+                $elapsed = ((Get-Date) - $exportStart).TotalSeconds
+                $mbps    = if ($elapsed -gt 0) { ($offset / 1MB) / $elapsed } else { 0 }
+                $pct     = [int](($offset / $remoteSize) * 100)
+                Write-Progress -Activity 'Exporting memory image' -PercentComplete $pct `
+                    -Status ("{0:N0}/{1:N0} bytes ({2}%) - {3:N1} MB/s" -f $offset, $remoteSize, $pct, $mbps)
             }
             Write-Progress -Activity 'Exporting memory image' -Completed
         }
+        finally {
+            $fs.Dispose()
+        }
     }
-    finally {
-        $fs.Dispose()
-    }
-    $localSize = (Get-Item -LiteralPath $LocalDestinationPath).Length
-    Write-Host ("  Wrote {0:N0} bytes locally." -f $localSize) -ForegroundColor Green
+    $localSize   = (Get-Item -LiteralPath $LocalDestinationPath).Length
+    $exportSecs  = [int]((Get-Date) - $exportStart).TotalSeconds
+    Write-Host ("  Wrote {0:N0} bytes locally in {1}s ({2:N1} MB/s)." -f $localSize, $exportSecs, (($localSize / 1MB) / [Math]::Max($exportSecs, 1))) -ForegroundColor Green
 
     # =============================================================================
     #  STEP 7: Verify and record
@@ -554,6 +572,14 @@ try {
         catch { Write-Warning "Remote hashing failed: $($_.Exception.Message)" }
     }
 
+    # Detect whether the retrieved artifact is compressed (needs go-winpmem extract).
+    $compressed     = $resolvedArgs -match '--compression'
+    $extractCommand = $null
+    if ($compressed) {
+        $extractTarget  = if ($LocalDestinationPath -match '\.raw$') { $LocalDestinationPath -replace '\.raw$', '.extracted.raw' } else { "$LocalDestinationPath.extracted.raw" }
+        $extractCommand = '{0} extract "{1}" "{2}"' -f (Split-Path -Path $WinpmemSourcePath -Leaf), $LocalDestinationPath, $extractTarget
+    }
+
     # Chain-of-custody sidecar.
     $manifest = [ordered]@{
         acquired_utc      = (Get-Date).ToUniversalTime().ToString('o')
@@ -573,6 +599,8 @@ try {
         sha256_local      = $localHash
         sha256_remote     = $remoteHash
         winpmem_exit_code = $runResult.return_code
+        compressed        = [bool]$compressed
+        extract_command   = $extractCommand
     }
     $manifestPath = "$LocalDestinationPath.manifest.json"
     $manifest | ConvertTo-Json -Depth 5 | Out-File -FilePath $manifestPath -Encoding UTF8
@@ -588,7 +616,11 @@ try {
     Write-Host "`n==========================================" -ForegroundColor Cyan
     Write-Host "  MEMORY ACQUISITION COMPLETE" -ForegroundColor Cyan
     Write-Host "  Image : $LocalDestinationPath"
-    Write-Host "  SHA256: $localHash"
+    Write-Host "  SHA256: $localHash  (of the transferred file)"
+    if ($compressed) {
+        Write-Host "  NOTE  : This is a compressed go-winpmem image. Decompress before analysis:" -ForegroundColor Yellow
+        Write-Host "          $extractCommand" -ForegroundColor Yellow
+    }
     Write-Host "==========================================" -ForegroundColor Cyan
 }
 catch {

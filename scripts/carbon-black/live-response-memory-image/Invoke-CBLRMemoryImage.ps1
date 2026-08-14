@@ -23,10 +23,12 @@
 
     The Winpmem command-line flags are exposed as a runtime parameter
     (-WinpmemArguments) so the analyst controls exactly how the image is written.
-    The default captures physical memory and the pagefile into an AFF4 container,
-    which is the only single-artifact way to include the pagefile. The full
-    AFF4-capable winpmem.exe is required for the pagefile (-p); winpmem_mini
-    does not support it.
+    The default targets go-winpmem ('acquire --progress "<image>"'), which writes
+    a raw physical-memory image using a modern signed driver that loads under
+    Secure Boot. To capture the pagefile instead, switch to the legacy
+    AFF4-capable winpmem build and its '-o "<image>" -p "<pagefile>"' arguments
+    (see the "Choosing a Winpmem binary" table in the README). go-winpmem and
+    winpmem_mini do not capture the pagefile.
 
     Live Response API endpoints used (all under the CB server base URL):
       POST   /api/v1/sensor  (lookup)         GET /api/v1/sensor?hostname=<h>
@@ -69,18 +71,21 @@ param(
     [string]$RemoteBinaryPath,
 
     # Path ON THE ENDPOINT where Winpmem writes the memory image (TARGET image path).
-    # Default: C:\Windows\Temp\<host>_<timestamp>.aff4
+    # Default: C:\Windows\Temp\<host>_<timestamp>.raw
     [string]$RemoteImagePath,
 
     # Path to the pagefile on the endpoint (substituted into {PagefilePath}).
+    # Only used when -WinpmemArguments references {PagefilePath} (legacy AFF4 build).
     [string]$PagefilePath = 'C:\pagefile.sys',
 
     # Winpmem argument string, exposed for runtime control. The tokens
     # {ImagePath} and {PagefilePath} are substituted with -RemoteImagePath and
-    # -PagefilePath. The default captures RAM + pagefile into an AFF4 container.
-    # Provide your own to change format/flags (keep {ImagePath} so retrieval
-    # knows where the image landed).
-    [string]$WinpmemArguments = '-o "{ImagePath}" -p "{PagefilePath}" -dd',
+    # -PagefilePath. The default targets go-winpmem (raw RAM image, signed driver).
+    # For the legacy AFF4 build that captures the pagefile, pass instead:
+    #   -o "{ImagePath}" -p "{PagefilePath}" -dd
+    # Provide your own to change binary/format/flags (keep {ImagePath} so retrieval
+    # knows where the image landed). See the README binary table.
+    [string]$WinpmemArguments = 'acquire --progress "{ImagePath}"',
 
     # Where to save the exported image on THIS machine (analyst's DESTINATION).
     # May be a directory (file name is derived) or a full file path.
@@ -240,6 +245,13 @@ function Remove-RemoteFile {
     }
 }
 
+function Get-RemoteText {
+    <# Retrieve a small text file from the endpoint and return its contents. #>
+    param([string]$SessionId, [string]$Path)
+    $cmd = Invoke-LRCommand -SessionId $SessionId -Name 'get file' -Object $Path -TimeoutSeconds $script:CommandTimeout
+    return (Invoke-CbApi -Method GET -Path "/api/v1/cblr/session/$SessionId/file/$($cmd.file_id)/content")
+}
+
 function Invoke-CleanupPrompt {
     param([string]$SessionId, [string]$BinaryPath, [string]$ImagePath)
 
@@ -372,7 +384,7 @@ try {
         $RemoteBinaryPath = Read-Default -Prompt 'Remote binary path (target on endpoint)' -Default "C:\Windows\Temp\$binaryLeaf"
     }
     if ([string]::IsNullOrWhiteSpace($RemoteImagePath)) {
-        $RemoteImagePath = Read-Default -Prompt 'Remote image path (target on endpoint)' -Default "C:\Windows\Temp\${hostLabel}_$stamp.aff4"
+        $RemoteImagePath = Read-Default -Prompt 'Remote image path (target on endpoint)' -Default "C:\Windows\Temp\${hostLabel}_$stamp.raw"
     }
     if ([string]::IsNullOrWhiteSpace($LocalDestinationPath)) {
         $LocalDestinationPath = Read-Default -Prompt 'Local destination (folder or file) to save the image' -Default (Get-Location).Path
@@ -430,18 +442,32 @@ try {
     #  STEP 4: Run Winpmem on the endpoint (create process, no PowerShell shell)
     # =============================================================================
     Write-Host "`n[4/8] Running Winpmem on the endpoint (this can take a while)..." -ForegroundColor Cyan
-    $runStart  = Get-Date
-    $runResult = Invoke-LRCommand -SessionId $sessionId -Name 'create process' -Object $processCommand `
-        -Wait $true -Extra @{ working_directory = (Split-Path -Path $RemoteImagePath -Parent) } `
+    $acqLogPath = "$RemoteImagePath.winpmem.log"   # capture Winpmem's console output for diagnostics
+    $runStart   = Get-Date
+    $runResult  = Invoke-LRCommand -SessionId $sessionId -Name 'create process' -Object $processCommand `
+        -Wait $true -Extra @{ working_directory = (Split-Path -Path $RemoteImagePath -Parent); output_file = $acqLogPath } `
         -TimeoutSeconds $AcquisitionTimeoutSeconds -Activity 'Winpmem memory acquisition'
     Write-Progress -Activity 'Winpmem memory acquisition' -Completed
     $runSecs = [int]((Get-Date) - $runStart).TotalSeconds
-    if ($null -ne $runResult.return_code -and $runResult.return_code -ne 0) {
-        Write-Warning "Winpmem exited with return code $($runResult.return_code) after ${runSecs}s. The image may be incomplete."
+    $rc      = $runResult.return_code
+
+    # Fail fast: a nonzero (or missing) exit code means Winpmem did not produce a
+    # valid image. Pull its captured output so the reason is visible, then abort
+    # instead of limping into a confusing "file not found" on the next step.
+    if ($null -eq $rc -or $rc -ne 0) {
+        Write-Warning "Winpmem exited with code '$rc' after ${runSecs}s."
+        try {
+            $acqLog = Get-RemoteText -SessionId $sessionId -Path $acqLogPath
+            if ($acqLog) {
+                Write-Host "  --- Winpmem output (from endpoint) ---" -ForegroundColor DarkYellow
+                Write-Host $acqLog
+                Write-Host "  --------------------------------------" -ForegroundColor DarkYellow
+            }
+        }
+        catch { Write-Verbose "Could not retrieve Winpmem log: $($_.Exception.Message)" }
+        throw "Winpmem failed on the endpoint (exit code '$rc'); no valid image was produced. Verify the Winpmem arguments match your binary's CLI - see the 'Choosing a Winpmem binary' table in the README."
     }
-    else {
-        Write-Host "  Winpmem completed in ${runSecs}s (return code: $($runResult.return_code))." -ForegroundColor Green
-    }
+    Write-Host "  Winpmem completed in ${runSecs}s (exit code 0)." -ForegroundColor Green
 
     # =============================================================================
     #  STEP 5: Confirm the image exists and get its size
@@ -513,9 +539,9 @@ try {
     if ($VerifyRemoteHash) {
         Write-Host "  Hashing the image on the endpoint (certutil)..."
         try {
-            $hashCmd = Invoke-LRCommand -SessionId $sessionId -Name 'create process' `
+            Invoke-LRCommand -SessionId $sessionId -Name 'create process' `
                 -Object ('certutil -hashfile "{0}" SHA256' -f $RemoteImagePath) -Wait $true `
-                -Extra @{ output_file = 'C:\Windows\Temp\winpmem_hash.txt' } -TimeoutSeconds $AcquisitionTimeoutSeconds
+                -Extra @{ output_file = 'C:\Windows\Temp\winpmem_hash.txt' } -TimeoutSeconds $AcquisitionTimeoutSeconds | Out-Null
             $hashGet = Invoke-LRCommand -SessionId $sessionId -Name 'get file' -Object 'C:\Windows\Temp\winpmem_hash.txt' -TimeoutSeconds $CommandTimeoutSeconds
             $hashRaw = Invoke-CbApi -Method GET -Path "/api/v1/cblr/session/$sessionId/file/$($hashGet.file_id)/content"
             $remoteHash = (($hashRaw -split "`n") | Where-Object { $_ -match '^[0-9a-fA-F ]{40,}$' } | Select-Object -First 1) -replace '\s',''

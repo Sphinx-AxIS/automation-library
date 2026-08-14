@@ -19,30 +19,34 @@ The workflow runs in eight stages:
 
 The Live Response session is always closed in a `finally` block, even on error.
 
-## Winpmem and the pagefile
+## Choosing a Winpmem binary
 
-Including the pagefile in a single artifact requires the **full AFF4-capable `winpmem.exe`** and an AFF4 container: the pagefile is stored as an additional stream, which raw/ELF single-stream formats cannot hold, and `winpmem_mini` has no `-p` flag at all.
-
-The Winpmem command line is exposed as the `-WinpmemArguments` parameter so you control the acquisition at run time. Two tokens are substituted before execution:
+The Winpmem command line is exposed as the `-WinpmemArguments` parameter, so the same script drives any Winpmem build — you supply the arguments that match your binary. Two tokens are substituted before execution:
 
 | Token | Replaced with |
 |---|---|
-| `{ImagePath}` | `-RemoteImagePath` (where the image is written on the endpoint — also where retrieval reads from) |
+| `{ImagePath}` | `-RemoteImagePath` — where the image is written on the endpoint, and where the export step reads from |
 | `{PagefilePath}` | `-PagefilePath` (default `C:\pagefile.sys`) |
 
-The default is:
-
-```text
--o "{ImagePath}" -p "{PagefilePath}" -dd
-```
-
 Keep the `{ImagePath}` token (or otherwise ensure Winpmem writes to `-RemoteImagePath`) so the export step reads the correct file; the script warns if the resolved arguments do not reference the image path.
+
+Which build you use is a real decision, because **no current Winpmem captures the pagefile with a modern signed driver — the two requirements pull in opposite directions:**
+
+| Build | Pagefile? | Output | Driver / Secure Boot | Example `-WinpmemArguments` |
+|---|---|---|---|---|
+| Legacy AFF4 winpmem (`winpmem_v3.3.rc3`, `winpmem-2.1.post4`) | **Yes** (`-p`) | AFF4 container (RAM + pagefile streams) | Old driver; **may not load** under Secure Boot / HVCI — test first | `-o "{ImagePath}" -p "{PagefilePath}" -dd` |
+| `go-winpmem` (1.0-rc2, Go rewrite) | No | Raw (sparse; optional `--compression snappy\|gzip`, decompress with `go-winpmem extract`) | Modern driver, **signed (Binalyze / GlobalSign)** — loads under Secure Boot | `acquire --progress "{ImagePath}"` |
+| WinPMEM 4.x "mini" (`winpmem_mini_x64`, `winpmem64.exe`) | No | Raw only | Modern driver | `"{ImagePath}"` (output is positional) |
+
+The script's **default** is the `go-winpmem` form (`acquire --progress "{ImagePath}"`) — a raw RAM image with a modern signed driver that loads under Secure Boot. To capture the **pagefile** instead, switch to the legacy AFF4 build by passing `-WinpmemArguments '-o "{ImagePath}" -p "{PagefilePath}" -dd'` and giving `-RemoteImagePath` an `.aff4` name.
+
+**If you need the pagefile *and* a driver that loads on modern endpoints,** capture RAM with `go-winpmem` and collect `C:\pagefile.sys` as a separate step — it is a locked system file, so it needs a raw-NTFS copy tool run via `create process`, not a plain `get file`. Note that `go-winpmem acquire` installs a `winpmem` driver service on the endpoint; run `go-winpmem uninstall` (via `create process`) afterward to leave a clean footprint.
 
 ## Requirements
 
 - Windows
 - PowerShell 7.0+
-- A full AFF4-capable Winpmem binary available locally (to push to the endpoint)
+- A Winpmem binary available locally to push to the endpoint (see [Choosing a Winpmem binary](#choosing-a-winpmem-binary); the default arguments assume `go-winpmem`)
 - Network reach to the Carbon Black EDR server with the Live Response API enabled
 - A Carbon Black API key with Live Response permission (prompted at run time)
 - The target sensor must be online for the session to activate
@@ -61,11 +65,14 @@ Typical run by hostname:
 .\Invoke-CBLRMemoryImage.ps1 `
   -CbServerUrl "https://cb.example.local" `
   -Hostname "WORKSTATION-01" `
-  -WinpmemSourcePath "C:\tools\winpmem.exe" `
-  -RemoteImagePath "C:\Windows\Temp\WORKSTATION-01.aff4" `
+  -WinpmemSourcePath "C:\tools\go-winpmem_amd64_1.0-rc2_signed.exe" `
+  -RemoteImagePath "C:\Windows\Temp\WORKSTATION-01.raw" `
   -LocalDestinationPath "E:\cases\IR-2026-014\memory" `
   -SkipCertificateCheck
 ```
+
+To capture the pagefile with the legacy AFF4 build instead, add
+`-WinpmemArguments '-o "{ImagePath}" -p "{PagefilePath}" -dd'` and use an `.aff4` image name.
 
 The API key is always prompted for and read as a `SecureString`; it is never accepted as an argument.
 
@@ -78,9 +85,9 @@ The API key is always prompted for and read as a `SecureString`; it is never acc
 | `-SensorId` | One of | Target Sensor ID. Use when hostname resolution is not feasible. |
 | `-WinpmemSourcePath` | Yes | Local path to the Winpmem binary to push. Prompted if omitted. |
 | `-RemoteBinaryPath` | No | Where the binary lands on the endpoint. Default: `C:\Windows\Temp\<source-file-name>`. |
-| `-RemoteImagePath` | No | Where Winpmem writes the image on the endpoint. Default: `C:\Windows\Temp\<host>_<timestamp>.aff4`. |
-| `-PagefilePath` | No | Pagefile path on the endpoint. Default: `C:\pagefile.sys`. |
-| `-WinpmemArguments` | No | Winpmem argument string with `{ImagePath}` / `{PagefilePath}` tokens. Default: `-o "{ImagePath}" -p "{PagefilePath}" -dd`. |
+| `-RemoteImagePath` | No | Where Winpmem writes the image on the endpoint. Default: `C:\Windows\Temp\<host>_<timestamp>.raw`. |
+| `-PagefilePath` | No | Pagefile path on the endpoint, substituted into `{PagefilePath}`. Only used by the legacy AFF4 arguments. Default: `C:\pagefile.sys`. |
+| `-WinpmemArguments` | No | Winpmem argument string with `{ImagePath}` / `{PagefilePath}` tokens. Default (go-winpmem): `acquire --progress "{ImagePath}"`. Legacy AFF4: `-o "{ImagePath}" -p "{PagefilePath}" -dd`. |
 | `-LocalDestinationPath` | No | Folder or file on this machine for the exported image. Default: current directory. |
 | `-RetrievalChunkSizeMB` | No | Chunk size for `get file` retrieval. Default: 64. Set to 0 for a single-shot pull. |
 | `-PollIntervalSeconds` | No | Seconds between status polls. Default: 5. |
@@ -98,7 +105,7 @@ Written next to the exported image:
 
 | File | Contents |
 |---|---|
-| `<image>` | The memory image (default AFF4 with embedded pagefile). |
+| `<image>` | The memory image (raw physical memory by default via go-winpmem; AFF4 with embedded pagefile if you switch to the legacy build). |
 | `<image>.sha256` | `SHA256 *<filename>` line for integrity checking. |
 | `<image>.manifest.json` | Acquisition record: server, sensor, session, sizes, hashes, Winpmem command, timestamps. |
 
@@ -106,8 +113,9 @@ Written next to the exported image:
 
 - **Sensor must be online.** Live Response cannot activate a session against an offline sensor; the script warns and will time out if the sensor never checks in.
 - **Image size.** Memory images can be tens of GB. Chunked retrieval keeps the CB server file store from filling up, but transfer over Live Response is still slow — plan for it, and confirm the server's `CbLRMaxStoreSizeMB` is large enough for at least one chunk.
-- **Full Winpmem required for the pagefile.** `winpmem_mini` cannot capture the pagefile; supply the AFF4-capable build.
-- **AFF4 output.** The default produces an AFF4 container. Extract a raw image later with `winpmem -e` (or analyze with AFF4-aware tooling) if your workflow needs raw.
+- **Pagefile support depends on the binary.** Only the legacy AFF4 build captures the pagefile; `go-winpmem` and WinPMEM 4.x image RAM only. See [Choosing a Winpmem binary](#choosing-a-winpmem-binary).
+- **Driver signing vs. Secure Boot.** Modern endpoints with Secure Boot / HVCI may refuse the legacy AFF4 driver. `go-winpmem` ships a signed driver that loads under Secure Boot but does not capture the pagefile. Validate driver load on a representative endpoint before an engagement.
+- **Failure is now fatal by design.** A nonzero Winpmem exit aborts the run and prints Winpmem's captured console output, rather than continuing into the retrieval steps.
 - **Permissions.** The Live Response `create process` runs as SYSTEM on the endpoint, which is sufficient for Winpmem to load its driver.
 
 ## Troubleshooting
@@ -122,4 +130,4 @@ Live Response is disabled on the CB server. Enable it (`CbLREnabled=True`) and r
 On-prem CB servers commonly use self-signed certificates. Re-run with `-SkipCertificateCheck`.
 
 ### Winpmem returns a non-zero exit code
-The image may be incomplete. Check that the supplied binary is the AFF4-capable build, that `-PagefilePath` is correct for the target, and review the arguments echoed in the plan output.
+The script aborts immediately on a nonzero exit and prints Winpmem's own console output (captured from the endpoint) so you can see the cause. The most common cause is an argument/binary mismatch — for example passing the AFF4 `-o / -p / -dd` flags to a modern build (`go-winpmem` or WinPMEM 4.x) that uses different syntax. Match `-WinpmemArguments` to your binary using the [Choosing a Winpmem binary](#choosing-a-winpmem-binary) table, and confirm the endpoint has a writable target path (e.g. `C:\Windows\Temp\`).

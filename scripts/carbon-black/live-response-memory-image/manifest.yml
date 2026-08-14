@@ -35,7 +35,7 @@ requirements:
   os: Windows
   powershell: ">=7.0"
   software:
-    - Winpmem binary (full AFF4-capable build for pagefile capture)
+    - Winpmem binary (default args target go-winpmem; legacy AFF4 build required for pagefile capture)
   network:
     - Carbon Black EDR server (Live Response API enabled)
   credentials:
@@ -54,7 +54,7 @@ inputs:
   - local destination path (analyst machine)
 
 outputs:
-  - memory image file (default AFF4 with embedded pagefile)
+  - memory image file (raw by default via go-winpmem; AFF4 with pagefile via legacy build)
   - SHA256 sidecar (.sha256)
   - acquisition manifest (.manifest.json)
 
@@ -77,8 +77,10 @@ related:
   - llm-assisted-investigate
 notes: >
   Targets Carbon Black EDR 7.9.2 (on-premise / "CB Response") Live Response
-  API. The pagefile requirement dictates the full AFF4-capable winpmem.exe
-  (the mini build has no -p flag). Winpmem arguments are exposed via
-  -WinpmemArguments so the analyst controls the acquisition at run time.
-  On-premise servers often use self-signed certificates; use
-  -SkipCertificateCheck when the certificate is not trusted.
+  API. Winpmem arguments are exposed via -WinpmemArguments so the analyst
+  controls the acquisition at run time; the default targets go-winpmem (raw
+  RAM image, signed driver that loads under Secure Boot). Capturing the
+  pagefile requires the legacy AFF4-capable winpmem build (-o/-p); go-winpmem
+  and winpmem_mini do not capture the pagefile. On-premise servers often use
+  self-signed certificates; use -SkipCertificateCheck when the certificate is
+  not trusted.

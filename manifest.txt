@@ -18,6 +18,10 @@ automation-library/
         process_pid_context_svg_styled.py
         process_pid_context_diagram.py
         process_trees_svg_indented.py
+      live-response-memory-image/
+        README.md
+        manifest.yml
+        Invoke-CBLRMemoryImage.ps1
       llm-assisted-investigate/
         README.md
         manifest.yml
@@ -53,6 +57,10 @@ automation-library/
         README.md
         manifest.yml
         Get-AlternateDataStreams.ps1
+      search-zeekfeeds/
+        README.md
+        manifest.yml
+        Search-ZeekFeeds.psm1
       windows-event-logs/
         README.md
         manifest.yml

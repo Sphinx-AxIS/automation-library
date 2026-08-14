@@ -1,0 +1,84 @@
+# Manifest for a single script folder under scripts/<category>/<script-name>/
+
+# --- Identity --------------------------------------------------------------
+
+name: live-response-memory-image
+
+display_name: Live Response Memory Image (Winpmem)
+
+summary: >
+  Acquires a live memory image (physical RAM plus the pagefile) from a remote
+  host using the Carbon Black EDR on-premise Live Response API and Winpmem.
+  Resolves the target sensor by hostname or Sensor ID, pushes the Winpmem
+  binary to the endpoint, runs it via the Live Response "create process"
+  command (not a PowerShell shell), then exports the resulting image back to
+  the analyst's machine with chunked reads and verifies it.
+
+# --- Classification --------------------------------------------------------
+
+category: carbon-black
+
+language: PowerShell
+
+# Production = stable, in active use.
+# Beta       = functional but rough edges; review before production use.
+# WIP        = under development; expect breakage.
+status: Beta
+
+# --- Files in this folder --------------------------------------------------
+
+entry_point: Invoke-CBLRMemoryImage.ps1
+
+# --- Runtime profile -------------------------------------------------------
+
+requirements:
+  os: Windows
+  powershell: ">=7.0"
+  software:
+    - Winpmem binary (full AFF4-capable build for pagefile capture)
+  network:
+    - Carbon Black EDR server (Live Response API enabled)
+  credentials:
+    - Carbon Black API key (always prompted, never an argument)
+
+# --- Data flow -------------------------------------------------------------
+
+inputs:
+  - carbon black server base URL
+  - target hostname or sensor ID
+  - carbon black api key (prompted)
+  - winpmem source path (local)
+  - remote binary target path (endpoint)
+  - remote image target path (endpoint)
+  - winpmem argument string (exposed for runtime control)
+  - local destination path (analyst machine)
+
+outputs:
+  - memory image file (default AFF4 with embedded pagefile)
+  - SHA256 sidecar (.sha256)
+  - acquisition manifest (.manifest.json)
+
+# --- Cross-reference -------------------------------------------------------
+
+tags:
+  - carbon-black
+  - edr
+  - live-response
+  - memory-forensics
+  - winpmem
+  - incident-response
+  - acquisition
+  - powershell
+
+# --- Optional metadata -----------------------------------------------------
+
+related:
+  - export-processes-by-host
+  - llm-assisted-investigate
+notes: >
+  Targets Carbon Black EDR 7.9.2 (on-premise / "CB Response") Live Response
+  API. The pagefile requirement dictates the full AFF4-capable winpmem.exe
+  (the mini build has no -p flag). Winpmem arguments are exposed via
+  -WinpmemArguments so the analyst controls the acquisition at run time.
+  On-premise servers often use self-signed certificates; use
+  -SkipCertificateCheck when the certificate is not trusted.

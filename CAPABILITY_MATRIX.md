@@ -10,6 +10,7 @@ A feature-by-feature index of `automation-library`. Use this to find scripts by 
 |---|---|
 | Investigate a Carbon Black watchlist alert end-to-end | [llm-assisted-investigate](scripts/carbon-black/llm-assisted-investigate/) |
 | Pull Carbon Black process data for a host across a time range | [export-processes-by-host](scripts/carbon-black/export-processes-by-host/) |
+| Capture a live memory image (RAM + pagefile) from a host via Live Response | [live-response-memory-image](scripts/carbon-black/live-response-memory-image/) |
 | Build an analyst-ready XLSX report from CB JSON | [export-processes-by-host](scripts/carbon-black/export-processes-by-host/) (Convert-ToXlsx.ps1 step) |
 | Visualize a Carbon Black process tree from an Excel export | [graph-process-tree](scripts/carbon-black/graph-process-tree/) |
 | Collect full forensic metadata for a file (hashes, signatures, ACLs, streams, Office/PDF props) | [get-file-metadata](scripts/file-system/get-file-metadata/) |
@@ -29,6 +30,7 @@ A feature-by-feature index of `automation-library`. Use this to find scripts by 
 | Capability | Scripts |
 |---|---|
 | Carbon Black EDR API | llm-assisted-investigate, export-processes-by-host |
+| Carbon Black Live Response API (session, put/get file, create process) | live-response-memory-image |
 | SPOC C software approval API | llm-assisted-investigate |
 | Kibana API (HTTP Basic Auth) | query-kibana-api |
 | Carbon Black process-event Excel export | graph-process-tree |
@@ -45,6 +47,9 @@ A feature-by-feature index of `automation-library`. Use this to find scripts by 
 |---|---|
 | Carbon Black process tree retrieval | llm-assisted-investigate, export-processes-by-host |
 | Carbon Black process tree visualization (forest and PID-centered) | graph-process-tree |
+| Live memory acquisition (RAM + pagefile) via Live Response + Winpmem | live-response-memory-image |
+| Push a binary to an endpoint and run it via Live Response | live-response-memory-image |
+| Retrieve a file from an endpoint to the analyst machine (chunked) | live-response-memory-image |
 | Watchlist alert investigation workflow | llm-assisted-investigate |
 | Software approval validation | llm-assisted-investigate |
 | LLM prompt generation from EDR data | llm-assisted-investigate |
@@ -95,6 +100,7 @@ A feature-by-feature index of `automation-library`. Use this to find scripts by 
 |---|---|---|---|
 | llm-assisted-investigate | Windows | PowerShell 5.1+ | Carbon Black API key, SPOC C API key, network reach to CB server, `process_map.csv` |
 | export-processes-by-host | Windows | PowerShell 7.0+ | Carbon Black API key; Excel installed for XLSX step |
+| live-response-memory-image | Windows | PowerShell 7.0+ | Carbon Black API key with Live Response permission; CB EDR server with Live Response enabled; AFF4-capable Winpmem binary; online target sensor |
 | graph-process-tree | Cross-platform | Python 3.8+ | `openpyxl` for all three scripts; `pandas` and `graphviz` (Python + system binaries on PATH) only for `process_pid_context_diagram.py` |
 | get-file-metadata | Windows | PowerShell 5.1+ | NTFS volume; MS Word installed for legacy `.doc` OLE inspection (optional) |
 | search-file-for-keywords | Windows | PowerShell 5.1+ | — |

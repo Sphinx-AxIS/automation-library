@@ -23,6 +23,14 @@ End-to-end Carbon Black extraction workflow. Queries the CB API for processes fi
 - **Outputs:** JSON (raw), CSV (structured), XLSX (final)
 - **Status:** Production
 
+### [live-response-memory-image](scripts/carbon-black/live-response-memory-image/)
+Acquires a live memory image (physical RAM plus the pagefile) from a remote host over the Carbon Black EDR on-premise Live Response API using Winpmem. Resolves the target sensor by hostname or Sensor ID, pushes the Winpmem binary to the endpoint, runs it via the `create process` command (no PowerShell in the Live Response shell), exports the image back to the analyst machine with chunked reads, verifies it (size + SHA256), and prompts for optional remote cleanup.
+
+- **Entry point:** [Invoke-CBLRMemoryImage.ps1](scripts/carbon-black/live-response-memory-image/Invoke-CBLRMemoryImage.ps1)
+- **Inputs:** CB server URL, target hostname or Sensor ID, CB API key (prompted), Winpmem source path, remote binary/image target paths, Winpmem argument string, local destination path
+- **Outputs:** Memory image (default AFF4 with embedded pagefile), `.sha256` sidecar, `.manifest.json` chain-of-custody record
+- **Status:** Beta
+
 ### [graph-process-tree](scripts/carbon-black/graph-process-tree/)
 Three Python scripts that visualize Carbon Black process trees from an Excel export. Includes a forest renderer that emits one styled SVG per root tree across the entire workbook, and two PID-centered renderers (a zero-dependency styled SVG and a Graphviz-based DOT/SVG/PDF/PNG variant) that show ancestors up to the root parent plus all descendants of a target PID.
 
